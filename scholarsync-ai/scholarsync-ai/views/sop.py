@@ -1,0 +1,98 @@
+# -*- coding: utf-8 -*-
+"""
+views/sop.py
+------------
+Statement of Purpose (SOP) Generator Workbench — Opportunity-tailored,
+grounded SOP drafts for top-matched scholarships.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
+import streamlit as st
+
+from models.opportunity import SearchResult
+
+
+def render_sop_page() -> None:
+    """Render the Statement of Purpose generator page."""
+    st.markdown('<div class="hero-title" style="font-size:2.1rem;margin-bottom:0.4rem;">📝 Statement of Purpose Workbench</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="color:#A79FC4;font-size:0.95rem;margin-bottom:1.4rem;">'
+        'AI-drafted, fact-grounded Statement of Purpose strictly aligned with your academic background and target opportunity.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    result: Optional[SearchResult] = st.session_state.get("search_result")
+    searched_once: bool = st.session_state.get("searched_once", False)
+
+    if not searched_once or result is None or not result.sop_draft:
+        st.markdown(
+            """
+            <div class="empty-state">
+                <div class="empty-icon">📝</div>
+                <div class="empty-text">No SOP Draft Available Yet</div>
+                <div class="empty-sub">
+                    The <strong>Application Coach</strong> agent drafts an opportunity-tailored Statement of Purpose when you run a scholarship search.
+                    Launch a search to generate a personalized draft for your top-matched opportunity.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1.2, 1])
+        with col2:
+            if st.button("🚀 Launch Search to Generate SOP", type="primary", use_container_width=True):
+                st.switch_page("views/search.py")
+        return
+
+    # Academic Integrity Banner
+    st.markdown(
+        """
+        <div class="info-box" style="margin-bottom:1.25rem;">
+            ℹ️ <strong>Academic Integrity Guarantee:</strong> This Statement of Purpose draft is composed strictly
+            from confirmed student facts provided in your submission. It explicitly avoids hallucinated achievements,
+            marking any opportunity-specific contextual sections with bracketed guidance <code>[...]</code> for your personal review.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Top Match Target Notice
+    top_name = result.scholarships[0].name if result.scholarships else "Top Matched Scholarship"
+    provider = result.scholarships[0].provider if result.scholarships else "Official Grantor"
+
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:0.8rem;">'
+            f'<div><span style="font-size:0.85rem;color:#B9A6FF;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Target Award</span>'
+            f'<div style="font-size:1.25rem;font-weight:800;color:#ffffff;">{top_name}</div>'
+            f'<div style="font-size:0.88rem;color:#A79FC4;">Administered by {provider}</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("---")
+        st.markdown(result.sop_draft)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        c_dl, c_back = st.columns([1.2, 1])
+        with c_dl:
+            st.download_button(
+                "📥 Download Statement of Purpose (.md)",
+                data=result.sop_draft,
+                file_name=f"Statement_of_Purpose_{datetime.now().strftime('%Y%m%d')}.md",
+                mime="text/markdown",
+                type="primary",
+                use_container_width=True,
+            )
+        with c_back:
+            if st.button("🏆 Back to Discovered Results", use_container_width=True):
+                st.switch_page("views/results.py")
+
+
+render_sop_page()

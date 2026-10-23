@@ -1,0 +1,105 @@
+# -*- coding: utf-8 -*-
+"""
+views/home.py
+-------------
+Home Page — Hero showcase, platform capabilities, and Get Started navigation.
+"""
+
+from __future__ import annotations
+import streamlit as st
+
+
+def render_home_page() -> None:
+    """Render the landing home page."""
+    st.markdown(
+        """
+        <div class="hero-container">
+            <div class="hero-title">Find Your Scholarships</div>
+            <div class="hero-subtitle">
+                AI-powered multi-agent intelligence matching your academic profile to global grants,
+                university awards, and fellowships with verified official evidence.
+            </div>
+            <div class="hero-badges-row">
+                <span class="hero-pill">🤖 6-Agent LangGraph Team</span>
+                <span class="hero-pill">🛡️ Deterministic Eligibility Verification</span>
+                <span class="hero-pill">🌐 Verified Official Sources</span>
+                <span class="hero-pill">📝 Grounded SOP Drafting</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Primary Action Button in centered column
+    c1, c2, c3 = st.columns([1, 1.4, 1])
+    with c2:
+        if st.button("🚀 Get Started — Find Scholarships", type="primary", use_container_width=True):
+            st.switch_page("views/search.py")
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
+    # Feature Highlights (3-column cards)
+    col1, col2, col3 = st.columns(3, gap="medium")
+
+    with col1:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="font-size:1.6rem;margin-bottom:0.4rem;">🔭</div>
+                <div style="font-size:1.1rem;font-weight:700;color:#B9A6FF;margin-bottom:0.5rem;">Multi-Agent Discovery</div>
+                <div style="font-size:0.9rem;color:#A79FC4;line-height:1.55;">
+                    Coordinated 6-agent LangGraph pipeline dynamically formulates target queries across 195+ countries and filters aggregators to locate official awards.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    with col2:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="font-size:1.6rem;margin-bottom:0.4rem;">🛡️</div>
+                <div style="font-size:1.1rem;font-weight:700;color:#B9A6FF;margin-bottom:0.5rem;">Verified Source Proof</div>
+                <div style="font-size:0.9rem;color:#A79FC4;line-height:1.55;">
+                    Eliminates hallucinations. The Verifier agent inspects source websites to confirm active cycle deadlines, degree levels, and funding quanta before matching.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    with col3:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="font-size:1.6rem;margin-bottom:0.4rem;">📝</div>
+                <div style="font-size:1.1rem;font-weight:700;color:#B9A6FF;margin-bottom:0.5rem;">Grounded SOP Drafting</div>
+                <div style="font-size:0.9rem;color:#A79FC4;line-height:1.55;">
+                    The Application Coach produces an opportunity-tailored Statement of Purpose draft grounded strictly in confirmed student facts from your submission.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Workflow summary banner
+    with st.container(border=True):
+        st.markdown(
+            """
+            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;justify-content:space-between;">
+                <div>
+                    <strong style="font-size:1.05rem;color:#ffffff;">Ready to match your profile?</strong>
+                    <div style="font-size:0.88rem;color:#A79FC4;">Enter your degree, nationality, CGPA, and destination preferences in seconds.</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔍 Open Search Form", type="secondary", use_container_width=True):
+            st.switch_page("views/search.py")
+
+
+render_home_page()

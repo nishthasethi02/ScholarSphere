@@ -1,0 +1,367 @@
+# -*- coding: utf-8 -*-
+"""
+views/search.py
+---------------
+Find Scholarships Page — Academic Profile Form, Document Validation,
+Controlled Failure Simulation, and 6-Agent Execution.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+import streamlit as st
+
+from agents.workflow import run_scholar_pipeline
+from components.cards import _validate_pdf
+from models.countries import ALL_COUNTRIES
+from models.opportunity import (
+    DegreeLevel,
+    Scholarship,
+    SearchResult,
+    StudentProfile,
+)
+from services.env_loader import get_tavily_key
+from services.sop_generator import generate_sop_draft
+
+
+# Curated demo opportunities when no Tavily API key is available
+DEMO_SCHOLARSHIPS: list[Scholarship] = [
+    Scholarship(
+        name="Chevening Scholarship (UK Government)",
+        provider="UK Government",
+        country="United Kingdom",
+        degree_levels=[DegreeLevel.MASTER],
+        field_tags=["Any field"],
+        annual_value_usd=38000,
+        deadline=datetime(2026, 11, 5).date(),
+        eligibility_notes=(
+            "Open to citizens of eligible countries including India, Nigeria, Brazil, Pakistan. "
+            "Requires undergraduate degree and minimum 2 years of work experience."
+        ),
+        match_score=0.92,
+        application_url="https://www.chevening.org/scholarships/",
+        source_url="https://www.chevening.org/",
+        source_domain="Chevening",
+        is_demo=True,
+    ),
+    Scholarship(
+        name="Gates Cambridge Scholarship",
+        provider="University of Cambridge",
+        country="United Kingdom",
+        degree_levels=[DegreeLevel.MASTER, DegreeLevel.PHD],
+        field_tags=["Any field"],
+        annual_value_usd=45000,
+        deadline=datetime(2026, 12, 15).date(),
+        eligibility_notes="Open to citizens of all countries outside the UK. Competitive academic record required.",
+        match_score=0.88,
+        application_url="https://www.gatescambridge.org/",
+        source_url="https://www.gatescambridge.org/",
+        source_domain="Gatescambridge",
+        is_demo=True,
+    ),
+]
+
+
+def render_agent_event(icon: str, dot_class: str, text: str) -> None:
+    """Render an individual agent workflow timeline event."""
+    st.markdown(
+        f"""
+        <div class="agent-event">
+            <div class="agent-dot {dot_class}"></div>
+            <span>{icon} {text}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_search_page() -> None:
+    """Render the scholarship search form and execution workflow."""
+    st.markdown('<div class="hero-title" style="font-size:2.1rem;margin-bottom:0.4rem;">Student Profile & Search</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="color:#A79FC4;font-size:0.95rem;margin-bottom:1.4rem;">'
+        'Configure your degree goals, citizenship, and destination preferences to launch the LangGraph multi-agent discovery pipeline.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Retrieve existing persistent profile data if available
+    saved_profile = st.session_state.get("profile_data", {})
+
+    col_form, col_status = st.columns([1.6, 1], gap="large")
+
+    with col_form:
+        # ── 1. Academic Profile ──────────────────────────────────────────────
+        with st.container(border=True):
+            st.markdown('<div class="section-title">🎓 Academic Profile</div>', unsafe_allow_html=True)
+
+            degree_opts = [d.value for d in DegreeLevel if d != DegreeLevel.ANY]
+            saved_degree = saved_profile.get("degree_level", DegreeLevel.MASTER.value)
+            deg_idx = degree_opts.index(saved_degree) if saved_degree in degree_opts else 1
+
+            degree_level = st.selectbox(
+                "Degree Level *",
+                options=degree_opts,
+                index=deg_idx,
+                help="The degree level you are seeking funding for.",
+            )
+
+            field_of_study = st.text_input(
+                "Field of Study *",
+                value=saved_profile.get("field_of_study", ""),
+                placeholder="e.g. Computer Science, Biomedical Engineering, Economics",
+                help="Your major or area of specialisation.",
+            )
+
+            cgpa = st.number_input(
+                "CGPA (optional)",
+                min_value=0.0,
+                max_value=10.0,
+                value=saved_profile.get("cgpa", None),
+                step=0.01,
+                format="%.2f",
+                placeholder="e.g. 3.75 (scale 4.0) or 8.5 (scale 10.0)",
+                help="Your cumulative GPA. Use your institution's scale (4.0 or 10.0).",
+            )
+
+            nationality = st.text_input(
+                "Nationality *",
+                value=saved_profile.get("nationality", ""),
+                placeholder="e.g. Indian, Pakistani, Nigerian, Brazilian, American",
+                help="Your citizenship — used to filter nationality-specific scholarships.",
+            )
+
+        # ── 2. Study Preferences (195+ Countries) ────────────────────────────
+        with st.container(border=True):
+            st.markdown('<div class="section-title">🌍 Study Preferences</div>', unsafe_allow_html=True)
+
+            preferred_countries = st.multiselect(
+                "Preferred Study Countries",
+                options=ALL_COUNTRIES,
+                default=saved_profile.get("preferred_countries", []),
+                placeholder="Search and select countries (e.g. India, Germany, United States)...",
+                help="Searchable dropdown containing 195+ world countries.",
+            )
+
+            INTAKE_OPTIONS = [
+                "Fall 2026", "Spring 2027", "Fall 2027", "Spring 2028", "Rolling / Flexible",
+            ]
+            saved_intake = saved_profile.get("intended_intake", "— Not specified —")
+            all_intakes = ["— Not specified —"] + INTAKE_OPTIONS
+            intake_idx = all_intakes.index(saved_intake) if saved_intake in all_intakes else 0
+
+            intended_intake = st.selectbox(
+                "Intended Intake",
+                options=all_intakes,
+                index=intake_idx,
+            )
+
+            c_grad, c_budget = st.columns(2)
+            with c_grad:
+                graduation_year = st.number_input(
+                    "Graduation Year",
+                    min_value=1990,
+                    max_value=2040,
+                    value=saved_profile.get("graduation_year", None),
+                    step=1,
+                    format="%d",
+                    placeholder="e.g. 2025 or 2026",
+                    help="Year you completed or expect to complete your current degree.",
+                )
+
+            with c_budget:
+                annual_budget_usd = st.number_input(
+                    "Max Annual Budget (USD)",
+                    min_value=0,
+                    max_value=200000,
+                    value=saved_profile.get("annual_budget_usd", None),
+                    step=500,
+                    placeholder="0 = fully funded only",
+                    help="Leave blank if flexible. Enter 0 to prioritize fully-funded scholarships.",
+                )
+
+        # ── 3. Document Upload ───────────────────────────────────────────────
+        with st.container(border=True):
+            st.markdown('<div class="section-title">📄 Documents (Optional)</div>', unsafe_allow_html=True)
+
+            st.markdown(
+                '<div class="info-box">PDF files only · Maximum 5 MB each · '
+                'Validated for format and size and referenced in your profile context.</div>',
+                unsafe_allow_html=True,
+            )
+
+            resume_file = st.file_uploader(
+                "Resume / CV",
+                type=["pdf"],
+                accept_multiple_files=False,
+                key="resume_upload",
+                help="Upload your resume in PDF format (max 5 MB).",
+            )
+
+            marksheet_file = st.file_uploader(
+                "Academic Transcript / Marksheet",
+                type=["pdf"],
+                accept_multiple_files=False,
+                key="marksheet_upload",
+                help="Upload your official transcript in PDF format (max 5 MB).",
+            )
+
+            resume_error = _validate_pdf(resume_file)
+            marksheet_error = _validate_pdf(marksheet_file)
+
+            if resume_error:
+                st.markdown(f'<div class="error-box">❌ {resume_error}</div>', unsafe_allow_html=True)
+            elif resume_file:
+                st.markdown(
+                    f'<div class="info-box">✅ Resume attached: <strong>{resume_file.name}</strong> '
+                    f'({resume_file.size / 1024:.0f} KB)</div>',
+                    unsafe_allow_html=True,
+                )
+
+            if marksheet_error:
+                st.markdown(f'<div class="error-box">❌ {marksheet_error}</div>', unsafe_allow_html=True)
+            elif marksheet_file:
+                st.markdown(
+                    f'<div class="info-box">✅ Marksheet attached: <strong>{marksheet_file.name}</strong> '
+                    f'({marksheet_file.size / 1024:.0f} KB)</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # ── 4. Demo / Simulation Controls ────────────────────────────────────
+        simulate_failure = st.checkbox(
+            "🧪 Simulate Agent Failure & Recovery (Demo Mode)",
+            value=saved_profile.get("simulate_failure", False),
+            help=(
+                "Simulates a network timeout during initial scouting. "
+                "The Critic detects the failure, adapts queries, and re-routes "
+                "to Scout to demonstrate resilient agent self-healing."
+            ),
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        search_clicked = st.button("🔍  Find Scholarships", use_container_width=True, type="primary")
+
+    with col_status:
+        # Architecture card
+        with st.container(border=True):
+            st.markdown('<div class="section-title" style="font-size:1.05rem;">🤖 Multi-Agent Engine</div>', unsafe_allow_html=True)
+            st.markdown(
+                """
+                - 🧠 **Profile Analyst**: Analyzes degree & constraint targets
+                - 🔭 **Scout**: Multi-query Tavily search with domain exclusion
+                - 🔍 **Verifier**: Source inspection & official proof extraction
+                - ⚖️ **Matcher**: Deterministic rule-based eligibility evaluation
+                - 🛡️ **Critic**: Audit volume & adaptive query retry routing
+                - 🎓 **Application Coach**: Grounded SOP drafting
+                """
+            )
+
+        # Previous Agent Activity or execution status
+        st.markdown('<div class="section-title" style="font-size:1.05rem;margin-top:1.2rem;">⚙️ Execution Activity</div>', unsafe_allow_html=True)
+        agent_events = st.session_state.get("agent_events", [])
+
+        if not agent_events:
+            st.markdown(
+                '<div style="color:#8C83A8;font-size:0.9rem;padding:0.5rem 0;">'
+                'No events yet. Click <strong>Find Scholarships</strong> to trigger the live agent workflow.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            with st.container(border=True):
+                for icon, dot_cls, text in agent_events[-6:]:
+                    render_agent_event(icon, dot_cls, text)
+
+        if st.session_state.get("searched_once", False):
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("📊 View Last Results →", use_container_width=True, type="secondary"):
+                st.switch_page("views/results.py")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SEARCH EXECUTION
+    # ════════════════════════════════════════════════════════════════════════
+    if search_clicked:
+        validation_errors: list[str] = []
+
+        if not field_of_study.strip():
+            validation_errors.append("Field of Study is required.")
+        if not nationality.strip():
+            validation_errors.append("Nationality is required.")
+        if resume_error:
+            validation_errors.append(f"Fix resume upload: {resume_error}")
+        if marksheet_error:
+            validation_errors.append(f"Fix marksheet upload: {marksheet_error}")
+
+        if validation_errors:
+            for err in validation_errors:
+                st.error(f"❌ {err}")
+        else:
+            # Persist form values into session_state["profile_data"]
+            st.session_state["profile_data"] = {
+                "degree_level": degree_level,
+                "field_of_study": field_of_study.strip(),
+                "cgpa": float(cgpa) if cgpa is not None else None,
+                "nationality": nationality.strip(),
+                "preferred_countries": preferred_countries,
+                "intended_intake": intended_intake,
+                "graduation_year": int(graduation_year) if graduation_year is not None else None,
+                "annual_budget_usd": float(annual_budget_usd) if annual_budget_usd is not None else None,
+                "simulate_failure": simulate_failure,
+            }
+
+            try:
+                profile = StudentProfile(
+                    degree_level=DegreeLevel(degree_level),
+                    field_of_study=field_of_study.strip(),
+                    cgpa=float(cgpa) if cgpa is not None else None,
+                    nationality=nationality.strip(),
+                    preferred_countries=preferred_countries,
+                    intended_intake=None if intended_intake.startswith("—") else intended_intake,
+                    graduation_year=int(graduation_year) if graduation_year is not None else None,
+                    annual_budget_usd=float(annual_budget_usd) if annual_budget_usd is not None else None,
+                    resume_filename=resume_file.name if resume_file and not resume_error else None,
+                    marksheet_filename=marksheet_file.name if marksheet_file and not marksheet_error else None,
+                )
+            except Exception as exc:
+                st.error(f"Profile error: {exc}")
+                return
+
+            with st.spinner("🤖 Multi-agent team scouting & verifying opportunities (LangGraph workflow)…"):
+                result: SearchResult = run_scholar_pipeline(
+                    profile,
+                    simulation_mode=simulate_failure,
+                )
+                if result.api_key_missing and DEMO_SCHOLARSHIPS:
+                    result.sop_draft = generate_sop_draft(profile, DEMO_SCHOLARSHIPS[0])
+
+            st.session_state["search_result"] = result
+            st.session_state["searched_once"] = True
+
+            # Record agent events
+            if result.workflow_events:
+                events = [
+                    (ev.get("icon", "🔵"), ev.get("dot_class", "dot-teal"), ev.get("message", ""))
+                    for ev in result.workflow_events
+                ]
+            else:
+                events = []
+                now = datetime.now().strftime("%H:%M:%S")
+                events.append(("🟢", "dot-teal", f"[{now}] Profile validated for {profile.nationality} student"))
+                events.append(("🔵", "dot-teal", f"[{now}] Query built: \"{result.query_used or 'n/a'}\""))
+                if result.api_key_missing:
+                    events.append(("🟡", "dot-amber", f"[{now}] Search skipped — TAVILY_API_KEY not configured"))
+                elif result.success:
+                    events.append(("✅", "dot-green", f"[{now}] Search completed — {result.total_found} results returned"))
+                else:
+                    events.append(("❌", "dot-grey", f"[{now}] Search failed: {result.error_message}"))
+
+            st.session_state["agent_events"] = events
+
+            # Smoothly transition to Results page
+            st.switch_page("views/results.py")
+
+
+render_search_page()

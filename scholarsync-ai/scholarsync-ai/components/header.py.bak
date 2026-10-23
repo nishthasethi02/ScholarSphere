@@ -1,0 +1,40 @@
+# -*- coding: utf-8 -*-
+"""
+components/header.py
+--------------------
+Global header branding strip displayed across all pages.
+"""
+
+from __future__ import annotations
+import streamlit as st
+from services.env_loader import get_tavily_key
+
+
+def render_header() -> None:
+    """Render the top branding strip with real-time API status."""
+    active_key = get_tavily_key()
+    has_key = bool(active_key and not active_key.startswith("tvly-xxx"))
+
+    status_badge = (
+        '<span class="header-status-badge">⚡ Live Search Engine Active</span>'
+        if has_key
+        else '<span class="header-status-badge" style="color:#ffb356;border-color:rgba(255,140,0,0.4);background:rgba(255,140,0,0.12);">⚠️ Demo Mode Active</span>'
+    )
+
+    st.markdown(
+        f"""
+        <div class="header-strip">
+            <div class="header-branding">
+                <span class="header-logo">🎓</span>
+                <div>
+                    <div class="header-title">ScholarSync AI</div>
+                    <div class="header-tagline">TetraNoodle AI Hackathon 2026 &nbsp;&middot;&nbsp; Intelligent Multi-Agent Scholarship Discovery</div>
+                </div>
+            </div>
+            <div>
+                {status_badge}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )

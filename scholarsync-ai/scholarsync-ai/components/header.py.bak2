@@ -1,0 +1,62 @@
+# -*- coding: utf-8 -*-
+"""
+components/header.py
+--------------------
+Global header branding strip displayed across all pages.
+"""
+
+from __future__ import annotations
+import streamlit as st
+from services.env_loader import get_tavily_key
+
+
+def render_header() -> None:
+    """Render the slim top branding strip with real-time API / engine status."""
+    active_key = get_tavily_key()
+    has_key = bool(active_key and not active_key.startswith("tvly-xxx"))
+    is_searching = st.session_state.get("is_searching", False)
+    search_status = st.session_state.get("search_status", None)
+
+    if is_searching:
+        status_dot = '<span class="status-dot dot-searching"></span>'
+        status_text = 'Searching Opportunities…'
+        status_class = 'status-badge-searching'
+    elif search_status == "done":
+        status_dot = '<span class="status-dot dot-active"></span>'
+        status_text = 'Discovery Ready'
+        status_class = 'status-badge-active'
+    elif has_key:
+        status_dot = '<span class="status-dot dot-active"></span>'
+        status_text = 'Search Engine Active'
+        status_class = 'status-badge-active'
+    else:
+        status_dot = '<span class="status-dot dot-demo"></span>'
+        status_text = 'Demo Mode (Offline Data)'
+        status_class = 'status-badge-demo'
+
+    st.markdown(
+        f"""
+        <div class="header-strip">
+            <div class="header-branding">
+                <div class="header-mark">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B9A6FF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                        <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="header-title">ScholarSync AI</span>
+                    <span class="header-divider">/</span>
+                    <span class="header-tagline">Intelligent Scholarship Discovery</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="header-status-badge {status_class}">
+                    {status_dot}
+                    <span>{status_text}</span>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
